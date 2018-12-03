@@ -1,179 +1,28 @@
 package mongoClient
 
 import (
-	"flag"
 	"fmt"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"log"
-	"os"
-	"runtime"
 	"sync"
-	"time"
-	"github.com/wysstartgo/go-mongo/conf"
 )
-//@see https://www.jianshu.com/p/b63e5cfa4ce5
-const BatchSize  = 500
-
-var (
-	configFile string
-	sourceCollection *mgo.Collection
-	targetCollection *mgo.Collection
-)
-//var sourceCollection *mgo.Collection
-
-//var targetCollection *mgo.Collection
 
 
-
-//创建缓冲区
-var ch = make(chan [] interface{},1000)
-
-const WorkerCount     = 5        //worker数量
-
-func main(){
-	//var lastObjId bson.ObjectId
-	//
-	//fmt.Println("hex:",lastObjId.Hex())
-	//fmt.Println("string:",lastObjId.String())
-	initCmd()
-	initEnv()
-
-	var err error = nil
-	if err = conf.LoadConf(configFile); err != nil {
-		goto ERROR;
-	}
-
-
-	handle()
-
-	//var ss string
-	//fmt.Println(ss)
-	//
-	//fmt.Println(ss == "")
-	//
-	//fmt.Println(strings.EqualFold(ss,""))
-	os.Exit(0)
-ERROR:
-	fmt.Println(err)
-	os.Exit(-1)
-
-}
-
-func initCmd() {
-	flag.StringVar(&configFile, "config", "./conf.json", "where conf.json is.")
-	flag.Parse()
-}
-
-func initEnv() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-}
-
-/**
-  注意：在这里需要传指针，不能传变量
- */
-func work(ch chan []interface{},workWaitGroup *sync.WaitGroup){
-	var isStop = false
-	for{
-		if isStop{
-			break
-		}
-		//接收任务
-		select {
-		case task := <- ch:
-			writeTargetData(task)
-		case <-time.After(time.Second * 5):
-			fmt.Println("数据已经处理完毕，关闭协程!")
-			workWaitGroup.Done()
-			isStop = true
-			break
-		}
-
-	}
-}
-
-func writeTargetData(data []interface{}){
-	fmt.Println("received +:",len(data))
-	bulk := targetCollection.Bulk()
-	bulk.Insert(data...)
-	_,err := bulk.Run()
-	if err != nil {
-		//log.Println("Error in insert:",err.Error())
-		panic("==========Error in bulk insert:" + err.Error())
-	}
-}
-
-
-func handle() {
-	//sourceUrl := "mongodb://zx:zx123456@192.168.1.133:20001,192.168.1.134:20001,192.168.1.135:20001/zx"
-	//sourceCollectionUrl := "business_collect_record"
-	//targetUrl := "mongodb://rtMongDb11:r12345678t@192.168.1.41:27017/zx"
-	//targetCollectionName := "business_collect_record"
-	_, sourceCollection = initDB(conf.GConf.SourceMongoUrl, conf.GConf.SourceCollection)
-	_, targetCollection = initDB(conf.GConf.TargetMongoUrl,conf.GConf.TargetCollection)
-
-	var controlWaitGroup sync.WaitGroup
-
-	for i := 1 ; i <= WorkerCount; i++{
-		controlWaitGroup.Add(1)
-		//初始化几个worker
-		go work(ch,&controlWaitGroup)
-	}
-
-	//fmt.Println(sourceCollection,"***********************")
-	pipe := sourceCollection.Pipe([]bson.M{{"$count": "count"}})
-	resp := []bson.M{}
-	err := pipe.All(&resp)
-	if err != nil {
-		fmt.Println("pipe control error!")
-	}
-	count := resp[0]["count"].(int)
-
-
-	//count, error := sourceCollection.Count()
-	//if error != nil {
-	//	panic(error)
-	//}
-	//分页获取
-	//获取方式为两个协程，一个从前往后获取，一个从后向前获取，每个协程负责一半的工作量
-	if count == 0 {
-		log.Println("no data in this collection , please check it!")
-	}
-	//queue := make(chan[] int,2)
-	var waitGroup sync.WaitGroup
-	half := count / 2
-	waitGroup.Add(1)
-	log.Println("start from first position!")
-	//time.Sleep(time.Second * 2)
-	go StartFromFirstPosition(half, &waitGroup)
-	log.Println("start from end position!")
-	waitGroup.Add(1)
-	if count % 2 == 0 {
-		go StartFromEndPosition(half, &waitGroup)
-	} else {
-		//从后向前多查询一个
-		go StartFromEndPosition(half+1, &waitGroup)
-	}
-	waitGroup.Wait()
-	fmt.Println("**************************")
-	controlWaitGroup.Wait()
-}
-
-func StartFromFirstPosition(count int,waitGroup * sync.WaitGroup){
+func StartFromFirstPosition(count int,waitGroup * sync.WaitGroup,sourceCollection *mgo.Collection,batchSize int,ch chan []interface{}){
 	fmt.Println("FromFirstPosition===============count:",count)
 	var lastObjId bson.ObjectId
-	runFromStartPosition(count,lastObjId)
+	runFromStartPosition(count,lastObjId,batchSize,sourceCollection,ch)
 	waitGroup.Done()
-
 }
 
-func runFromStartPosition(count int,lastObjId bson.ObjectId)  {
+func runFromStartPosition(count int,lastObjId bson.ObjectId, batchSize int,sourceCollection *mgo.Collection,ch chan []interface{})  {
 	var sourceResult []interface{}
 	fmt.Println("FromFirstPosition===============count is:",count)
 	fmt.Println("FromFirstPosition=============lastObjId:",lastObjId)
 	//从头开始去处理
-	firstBatchSize := BatchSize
-	if count < BatchSize {
+	firstBatchSize := batchSize
+	if count < batchSize {
 		firstBatchSize = count
 	}
 	//lastObjId.Hex()
@@ -203,26 +52,26 @@ func runFromStartPosition(count int,lastObjId bson.ObjectId)  {
 	//fmt.Println("=====FromStart:",firstResult)
 	lastObjId = firstResult.(bson.M)["_id"].(bson.ObjectId)
 	ch <- sourceResult
-	if count - BatchSize > 0 {
-		runFromStartPosition(count - BatchSize,lastObjId)
+	if count -batchSize > 0 {
+		runFromStartPosition(count -batchSize,lastObjId,batchSize,sourceCollection,ch)
 	}
 }
 
-func StartFromEndPosition(count int,waitGroup * sync.WaitGroup){
+func StartFromEndPosition(count int,waitGroup * sync.WaitGroup,sourceCollection *mgo.Collection,batchSize int,ch chan []interface{}){
 	//fmt.Println("FromEndPosition===============count:",count)
 	var firstObjId bson.ObjectId
-	runFromEndPosition(count,firstObjId)
+	runFromEndPosition(count,firstObjId,sourceCollection,batchSize,ch)
 	waitGroup.Done()
 }
 
-func runFromEndPosition(count int,firstObjId bson.ObjectId){
+func runFromEndPosition(count int,firstObjId bson.ObjectId,sourceCollection *mgo.Collection,batchSize int,ch chan []interface{}){
 	//从结束的地方开始查找,是在另一个协程中处理的
 	var sourceResult []interface{}
 	fmt.Println("FromEndPosition===============count is:",count)
 	fmt.Println("=====FromEnd:",firstObjId)
 	//从尾开始去处理
-	firstBatchSize := BatchSize
-	if count < BatchSize {
+	firstBatchSize := batchSize
+	if count < batchSize {
 		firstBatchSize = count
 	}
 	if firstObjId.Hex() == "" {
@@ -242,14 +91,14 @@ func runFromEndPosition(count int,firstObjId bson.ObjectId){
 	}
 	fmt.Println("++++EndPosition:",len)
 	ch <- sourceResult
-	if count - BatchSize > 0 {
+	if count - batchSize > 0 {
 		//bson.ObjectIdHex()
 		//fmt.Println("=====FromEnd:",sourceResult)
 		//顺序的最后一条记录
 		firstResult := sourceResult[len - 1]
 		//fmt.Println("=====FromEnd:",firstResult)
 		firstObjId = firstResult.(bson.M)["_id"].(bson.ObjectId)
-		runFromEndPosition(count - BatchSize,firstObjId)
+		runFromEndPosition(count - batchSize,firstObjId,sourceCollection,batchSize,ch)
 	}
 
 }
@@ -269,7 +118,7 @@ panic函数就是往外扔错误，一层接一层往上扔直到当前程序不
 recover 会拦截错误，不会让错误往上扔，返回给调用者error（里面有错误的信息）类型 ，从而使goroutine 不挂掉。
 
  */
-func initDB(url string, c string) (*mgo.Session, *mgo.Collection){
+func InitDB(url string, c string) (*mgo.Session, *mgo.Collection){
 	dialInfo,err := mgo.ParseURL(url)
 	if err != nil {
 		log.Fatal(err.Error())
