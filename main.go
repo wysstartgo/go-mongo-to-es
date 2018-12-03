@@ -2,16 +2,15 @@ package main
 
 import (
 	"conf"
+	"flag"
+	"fmt"
 	"github.com/siddontang/go-log/log"
 	"github.com/siddontang/go/bson"
 	"github.com/wysstartgo/go-mongo-to-es/elastic"
-	"flag"
-	"fmt"
+	"github.com/wysstartgo/go-mongo-to-es/mongoClient"
 	"gopkg.in/mgo.v2"
 	"io/ioutil"
-	"github.com/wysstartgo/go-mongo-to-es/mongoClient"
 	"sync"
-	"time"
 )
 
 var host = flag.String("host", "192.168.1.38", "Elasticsearch host")
@@ -99,21 +98,21 @@ func main(){
   注意：在这里需要传指针，不能传变量
  */
 func work(ch chan []interface{},workWaitGroup *sync.WaitGroup){
-	var isStop = false
-	for{
-		if isStop{
-			break
-		}
-		//接收任务
-		select {
-		case task := <- ch:
-			writeTargetData(task)
-		case <-time.After(time.Second * 5):
-			fmt.Println("数据已经处理完毕，关闭协程!")
-			workWaitGroup.Done()
-			isStop = true
-			break
-		}
-
-	}
+	//var isStop = false
+	//for{
+	//	if isStop{
+	//		break
+	//	}
+	//	//接收任务
+	//	select {
+	//	case task := <- ch:
+	//		//writeTargetData(task)
+	//	case <-time.After(time.Second * 5):
+	//		fmt.Println("数据已经处理完毕，关闭协程!")
+	//		workWaitGroup.Done()
+	//		isStop = true
+	//		break
+	//	}
+	//
+	//}
 }
