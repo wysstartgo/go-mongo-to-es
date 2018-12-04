@@ -3,18 +3,19 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/siddontang/go-log/log"
-	"github.com/siddontang/go/bson"
 	"github.com/wysstartgo/go-mongo-to-es/elastic"
 	"github.com/wysstartgo/go-mongo-to-es/mongoClient"
 	"gopkg.in/mgo.v2"
-	"io/ioutil"
+	"gopkg.in/mgo.v2/bson"
+	"log"
+	"reflect"
+	"strconv"
 	"sync"
 	"time"
 )
 
-var host = flag.String("host", "192.168.1.333", "Elasticsearch host")
-var port = flag.Int("port", 9300, "Elasticsearch port")
+var host = flag.String("host", "192.168.1.38", "Elasticsearch host")
+var port = flag.Int("port", 9200, "Elasticsearch port")
 var c *elastic.Client
 //批处理的数量
 const BatchSize  = 500
@@ -32,6 +33,8 @@ var docType = ""
 
 
 func main(){
+	//time.Now().Nanosecond();
+
 	//索引重建操作
 	cfg := new(elastic.ClientConfig)
 	cfg.Addr = fmt.Sprintf("%s:%d", *host, *port)
@@ -41,25 +44,29 @@ func main(){
 
 	index = "rt_group"
 	docType =  "group"
-	mapingMap,err := ioutil.ReadFile("F:\\goworkspace\\go-mongo-to-es\\group.mapping")
-	if err != nil{
-		fmt.Println(err)
-	}
-	err = c.CreateMappingByFile(index, docType, mapingMap)
-	if err != nil {
-		fmt.Println(err)
-	}
+	//mapingMap,err := ioutil.ReadFile("F:\\goworkspace\\go-mongo-to-es\\group.mapping")
+	//if err != nil{
+	//	fmt.Println(err)
+	//}
+	//err = c.CreateMappingByFile(index, docType, mapingMap)
+	//if err != nil {
+	//	fmt.Println("-----------------------------")
+	//	fmt.Println(err)
+	//	fmt.Println("-----------------------------")
+	//}
 
 	//从mongodb取数据来建索引
+	retriveDataAndIndex(nil)
+}
+
+func retriveDataAndIndex(err error) {
 	_, sourceCollection = mongoClient.InitDB("mongodb://zx:zx123456@192.168.1.133:20001,192.168.1.134:20001,192.168.1.135:20001/zx", "business_group_base_info")
 	var controlWaitGroup sync.WaitGroup
-
-	for i := 1 ; i <= WorkerCount; i++{
+	for i := 1; i <= WorkerCount; i++ {
 		controlWaitGroup.Add(1)
 		//初始化几个worker
-		go work(ch,&controlWaitGroup)
+		go work(ch, &controlWaitGroup)
 	}
-
 	//fmt.Println(sourceCollection,"***********************")
 	pipe := sourceCollection.Pipe([]bson.M{{"$count": "count"}})
 	resp := []bson.M{}
@@ -83,14 +90,14 @@ func main(){
 	waitGroup.Add(1)
 	log.Println("start from first position!")
 	//time.Sleep(time.Second * 2)
-	go mongoClient.StartFromFirstPosition(half, &waitGroup,sourceCollection,BatchSize,ch)
+	go mongoClient.StartFromFirstPosition(half, &waitGroup, sourceCollection, BatchSize, ch)
 	log.Println("start from end position!")
 	waitGroup.Add(1)
-	if count % 2 == 0 {
-		go mongoClient.StartFromEndPosition(half, &waitGroup,sourceCollection,BatchSize,ch)
+	if count%2 == 0 {
+		go mongoClient.StartFromEndPosition(half, &waitGroup, sourceCollection, BatchSize, ch)
 	} else {
 		//从后向前多查询一个
-		go mongoClient.StartFromEndPosition(half+1, &waitGroup,sourceCollection,BatchSize,ch)
+		go mongoClient.StartFromEndPosition(half+1, &waitGroup, sourceCollection, BatchSize, ch)
 	}
 	waitGroup.Wait()
 	fmt.Println("**************************")
@@ -131,10 +138,10 @@ func buildGroupIndex(data []interface{}){
 		bulkRequest := new(elastic.BulkRequest)
 		bulkRequest.Action = elastic.ActionCreate
 		rowData := data[i]
-		log.Println("==============",rowData)
+		//log.Println("==============",rowData)
 		//获取id
-		groupId := rowData.(bson.M)["groupId"].(string)
-		bulkRequest.ID = groupId
+		groupId := rowData.(bson.M)["groupId"].(int64)
+		bulkRequest.ID = strconv.FormatInt(groupId,10)
 		//bulkRequest.Index = index
 		//bulkRequest.Type = docType
 		groupData := make(map[string]interface{})
@@ -143,26 +150,39 @@ func buildGroupIndex(data []interface{}){
 		groupData["brief"] = rowData.(bson.M)["brief"]
 		groupData["tags_ids"] = rowData.(bson.M)["tagIds"]
 		groupData["tags_names"] = rowData.(bson.M)["tagNames"]
-		groupData["is_free"] = rowData.(bson.M)["isFree"]
-		groupData["price"] = rowData.(bson.M)["price"]
-		groupData["author"] = rowData.(bson.M)["author"]
-		groupData["publish_time"] = rowData.(bson.M)["publishTime"]
-		groupData["region"] = rowData.(bson.M)["groupRegion"]
+		groupData["is_free"] = rowData.(bson.M)["isFree"].(int)
+		//groupData["price"] = rowData.(bson.M)["price"]
+		//groupData["author"] = rowData.(bson.M)["author"]
+		//createTime := time.Now().Format(rowData.(bson.M)["createTime"].(string))
+		groupData["publish_time"] = rowData.(bson.M)["createTime"].(time.Time).UnixNano()/1e6
+		region := rowData.(bson.M)["region"]
+		if region != nil{
+			groupData["region"] = region.(int)
+		}
+
 		groupData["category_id"] = rowData.(bson.M)["categoryId"]
 		groupData["category_name"] = rowData.(bson.M)["categoryName"]
-		groupData["total_members"] = rowData.(bson.M)["totalMembers"]
-		groupData["attr1"] = rowData.(bson.M)["attr1"]
-		groupData["attr2"] = rowData.(bson.M)["attr2"]
-		groupData["score"] = rowData.(bson.M)["score"]
+		totalMember := rowData.(bson.M)["totalMember"]
+
+		groupData["total_members"] = totalMember
+
+		//switch totalMember.(type) {
+		//case int:
+		//
+		//}
+		fmt.Println(reflect.TypeOf(totalMember))
+		//groupData["attr1"] = rowData.(bson.M)["attr1"]
+		//groupData["attr2"] = rowData.(bson.M)["attr2"]
+		//groupData["score"] = rowData.(bson.M)["score"]
 		bulkRequest.Data = groupData
 		items[i] = bulkRequest
 	}
 	//保存
 	resp,err := c.IndexTypeBulk(index,docType,items)
 	if err != nil {
-		log.Error(err,resp.Code,":",resp.Errors)
+		log.Println(err,resp.Code,":",resp.Errors)
 	}else{
-		log.Println(resp.Code,resp.Items)
+		log.Println(resp.Code)
 	}
 }
 
