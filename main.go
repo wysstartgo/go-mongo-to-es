@@ -23,7 +23,7 @@ var (
 	sourceCollection *mgo.Collection
 )
 //创建缓冲区
-var ch = make(chan [] bson.M,1000)
+var ch = make(chan [] interface{},1000)
 
 const WorkerCount  = 5        //worker数量
 
@@ -100,7 +100,7 @@ func main(){
 /**
   注意：在这里需要传指针，不能传变量
  */
-func work(ch chan []bson.M,workWaitGroup *sync.WaitGroup){
+func work(ch chan []interface{},workWaitGroup *sync.WaitGroup){
 	var isStop = false
 	for{
 		if isStop{
@@ -124,7 +124,7 @@ func work(ch chan []bson.M,workWaitGroup *sync.WaitGroup){
 /**
 	创建圈子索引
  */
-func buildGroupIndex(data []bson.M){
+func buildGroupIndex(data []interface{}){
 	length := len(data)
 	items := make([]*elastic.BulkRequest,length)
 	for i := 0; i < length; i++ {
@@ -133,27 +133,27 @@ func buildGroupIndex(data []bson.M){
 		rowData := data[i]
 		log.Println("==============",rowData)
 		//获取id
-		groupId := rowData["groupId"].(string)
+		groupId := rowData.(bson.M)["groupId"].(string)
 		bulkRequest.ID = groupId
 		//bulkRequest.Index = index
 		//bulkRequest.Type = docType
 		groupData := make(map[string]interface{})
 		groupData["id"] = groupId
-		groupData["title"] = rowData["title"]
-		groupData["brief"] = rowData["brief"]
-		groupData["tags_ids"] = rowData["tagIds"]
-		groupData["tags_names"] = rowData["tagNames"]
-		groupData["is_free"] = rowData["isFree"]
-		groupData["price"] = rowData["price"]
-		groupData["author"] = rowData["author"]
-		groupData["publish_time"] = rowData["publishTime"]
-		groupData["region"] = rowData["groupRegion"]
-		groupData["category_id"] = rowData["categoryId"]
-		groupData["category_name"] = rowData["categoryName"]
-		groupData["total_members"] = rowData["totalMembers"]
-		groupData["attr1"] = rowData["attr1"]
-		groupData["attr2"] = rowData["attr2"]
-		groupData["score"] = rowData["score"]
+		groupData["title"] = rowData.(bson.M)["title"]
+		groupData["brief"] = rowData.(bson.M)["brief"]
+		groupData["tags_ids"] = rowData.(bson.M)["tagIds"]
+		groupData["tags_names"] = rowData.(bson.M)["tagNames"]
+		groupData["is_free"] = rowData.(bson.M)["isFree"]
+		groupData["price"] = rowData.(bson.M)["price"]
+		groupData["author"] = rowData.(bson.M)["author"]
+		groupData["publish_time"] = rowData.(bson.M)["publishTime"]
+		groupData["region"] = rowData.(bson.M)["groupRegion"]
+		groupData["category_id"] = rowData.(bson.M)["categoryId"]
+		groupData["category_name"] = rowData.(bson.M)["categoryName"]
+		groupData["total_members"] = rowData.(bson.M)["totalMembers"]
+		groupData["attr1"] = rowData.(bson.M)["attr1"]
+		groupData["attr2"] = rowData.(bson.M)["attr2"]
+		groupData["score"] = rowData.(bson.M)["score"]
 		bulkRequest.Data = groupData
 		items[i] = bulkRequest
 	}

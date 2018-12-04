@@ -9,15 +9,15 @@ import (
 )
 
 
-func StartFromFirstPosition(count int,waitGroup * sync.WaitGroup,sourceCollection *mgo.Collection,batchSize int,ch chan []bson.M){
+func StartFromFirstPosition(count int,waitGroup * sync.WaitGroup,sourceCollection *mgo.Collection,batchSize int,ch chan []interface{}){
 	fmt.Println("FromFirstPosition===============count:",count)
 	var lastObjId bson.ObjectId
 	runFromStartPosition(count,lastObjId,batchSize,sourceCollection,ch)
 	waitGroup.Done()
 }
 
-func runFromStartPosition(count int,lastObjId bson.ObjectId, batchSize int,sourceCollection *mgo.Collection,ch chan []bson.M)  {
-	var sourceResult []bson.M
+func runFromStartPosition(count int,lastObjId bson.ObjectId, batchSize int,sourceCollection *mgo.Collection,ch chan []interface{})  {
+	var sourceResult []interface{}
 	fmt.Println("FromFirstPosition===============count is:",count)
 	fmt.Println("FromFirstPosition=============lastObjId:",lastObjId)
 	//从头开始去处理
@@ -50,23 +50,23 @@ func runFromStartPosition(count int,lastObjId bson.ObjectId, batchSize int,sourc
 	//顺序的最后一条记录
 	firstResult := sourceResult[len - 1]
 	//fmt.Println("=====FromStart:",firstResult)
-	lastObjId = firstResult["_id"].(bson.ObjectId)
+	lastObjId = firstResult.(bson.M)["_id"].(bson.ObjectId)
 	ch <- sourceResult
 	if count -batchSize > 0 {
 		runFromStartPosition(count -batchSize,lastObjId,batchSize,sourceCollection,ch)
 	}
 }
 
-func StartFromEndPosition(count int,waitGroup * sync.WaitGroup,sourceCollection *mgo.Collection,batchSize int,ch chan []bson.M){
+func StartFromEndPosition(count int,waitGroup * sync.WaitGroup,sourceCollection *mgo.Collection,batchSize int,ch chan []interface{}){
 	//fmt.Println("FromEndPosition===============count:",count)
 	var firstObjId bson.ObjectId
 	runFromEndPosition(count,firstObjId,sourceCollection,batchSize,ch)
 	waitGroup.Done()
 }
 
-func runFromEndPosition(count int,firstObjId bson.ObjectId,sourceCollection *mgo.Collection,batchSize int,ch chan []bson.M){
+func runFromEndPosition(count int,firstObjId bson.ObjectId,sourceCollection *mgo.Collection,batchSize int,ch chan []interface{}){
 	//从结束的地方开始查找,是在另一个协程中处理的
-	var sourceResult []bson.M
+	var sourceResult []interface{}
 	fmt.Println("FromEndPosition===============count is:",count)
 	fmt.Println("=====FromEnd:",firstObjId)
 	//从尾开始去处理
@@ -97,7 +97,7 @@ func runFromEndPosition(count int,firstObjId bson.ObjectId,sourceCollection *mgo
 		//顺序的最后一条记录
 		firstResult := sourceResult[len - 1]
 		//fmt.Println("=====FromEnd:",firstResult)
-		firstObjId = firstResult["_id"].(bson.ObjectId)
+		firstObjId = firstResult.(bson.M)["_id"].(bson.ObjectId)
 		runFromEndPosition(count - batchSize,firstObjId,sourceCollection,batchSize,ch)
 	}
 
